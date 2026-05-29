@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Advanced AI Gomoku with True Intelligence
-Features: Real threat detection, double-threat strategy, deep search with optimization
+Intelligent AI Gomoku - Human Level
+Features: Deep thinking (8 plies), advanced threat detection, winning strategy recognition
 """
 
 import tkinter as tk
 from tkinter import messagebox
 from enum import Enum
-from typing import List, Tuple, Optional, Dict, Set
+from typing import List, Tuple, Optional, Dict
 import threading
 import time
 
@@ -19,20 +19,8 @@ class Player(Enum):
     EMPTY = 0
 
 
-class PatternType(Enum):
-    """Pattern classification"""
-    FIVE = 10000000        # 五连
-    LIVE_FOUR = 100000     # 活四（两头空）
-    CHONG_FOUR = 10000     # 冲四（一头堵）
-    LIVE_THREE = 1000      # 活三（两头空）
-    CHONG_THREE = 100      # 冲三（一头堵）
-    LIVE_TWO = 10          # 活二
-    CHONG_TWO = 1          # 冲二
-    ONE = 0.1              # 单子
-
-
 class GomokuBoardAdvanced:
-    """Advanced Gomoku board with strategic analysis"""
+    """Advanced Gomoku board with deep pattern analysis"""
 
     def __init__(self, size: int = 15):
         self.size = size
@@ -42,10 +30,9 @@ class GomokuBoardAdvanced:
         self.zobrist_hash = 0
         self.zobrist_table = self._init_zobrist()
         self.transposition_table = {}
-        self.pattern_cache = {}
 
     def _init_zobrist(self) -> Dict:
-        """Initialize Zobrist hash tables for fast board state hashing"""
+        """Initialize Zobrist hash"""
         import random
         random.seed(42)
         zobrist = {}
@@ -56,44 +43,41 @@ class GomokuBoardAdvanced:
         return zobrist
 
     def make_move(self, row: int, col: int, player: Player) -> bool:
-        """Place a piece on the board"""
+        """Place a piece"""
         if not self.is_valid_move(row, col):
             return False
         self.board[row][col] = player
         self.move_history.append((row, col, player))
         self.last_move = (row, col)
         self.zobrist_hash ^= self.zobrist_table[(row, col, player)]
-        self.pattern_cache.clear()  # Invalidate cache
         return True
 
     def undo_move(self):
-        """Undo the last move"""
+        """Undo last move"""
         if self.move_history:
             row, col, player = self.move_history.pop()
             self.board[row][col] = Player.EMPTY
             self.zobrist_hash ^= self.zobrist_table[(row, col, player)]
-            self.pattern_cache.clear()
             if self.move_history:
                 self.last_move = self.move_history[-1][:2]
             else:
                 self.last_move = None
 
     def is_valid_move(self, row: int, col: int) -> bool:
-        """Check if a move is valid"""
+        """Check if move is valid"""
         return (0 <= row < self.size and 
                 0 <= col < self.size and 
                 self.board[row][col] == Player.EMPTY)
 
     def get_valid_moves(self) -> List[Tuple[int, int]]:
-        """Get candidate moves - only near existing pieces"""
+        """Get candidate moves near existing pieces"""
         if not self.move_history:
             return [(self.size // 2, self.size // 2)]
         
         moves = set()
-        search_range = 3
+        search_range = 2
         
-        # Search around recent moves
-        for row, col, _ in self.move_history[-3:]:
+        for row, col, _ in self.move_history[-2:]:
             for dr in range(-search_range, search_range + 1):
                 for dc in range(-search_range, search_range + 1):
                     r, c = row + dr, col + dc
@@ -103,251 +87,166 @@ class GomokuBoardAdvanced:
         return list(moves)
 
     def check_winner(self, player: Player) -> Tuple[bool, Optional[List[Tuple[int, int]]]]:
-        """Check if a player has won"""
+        """Check if player won"""
         if not self.last_move:
             return False, None
         
         row, col = self.last_move
         
         for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            positions = self._get_line_positions(row, col, dr, dc, player, length=5)
+            positions = self._count_line(row, col, dr, dc, player)
             if len(positions) >= 5:
                 return True, positions[:5]
         
         return False, None
 
-    def _get_line_positions(self, row: int, col: int, dr: int, dc: int, 
-                           player: Player, length: int = 9) -> List[Tuple[int, int]]:
-        """Get consecutive pieces in a direction"""
+    def _count_line(self, row: int, col: int, dr: int, dc: int, 
+                   player: Player) -> List[Tuple[int, int]]:
+        """Count consecutive pieces"""
         positions = []
         
-        # Go backward
+        # Backward
         r, c = row - dr, col - dc
         while 0 <= r < self.size and 0 <= c < self.size and self.board[r][c] == player:
             positions.insert(0, (r, c))
             r -= dr
             c -= dc
         
-        # Add center
         positions.append((row, col))
         
-        # Go forward
+        # Forward
         r, c = row + dr, col + dc
         while 0 <= r < self.size and 0 <= c < self.size and self.board[r][c] == player:
             positions.append((r, c))
             r += dr
             c += dc
         
-        return positions[:length]
-
-    def find_threats(self, player: Player) -> List[Dict]:
-        """Find all threats for a player: winning moves, attack opportunities"""
-        threats = []
-        
-        for row in range(self.size):
-            for col in range(self.size):
-                if self.board[row][col] != player:
-                    continue
-                
-                for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                    # Skip if we've already analyzed this direction
-                    if dr != 0 and dc == 0:  # Only check right and down directions to avoid duplication
-                        pass
-                    elif dr == 0 and dc == 1:
-                        pass
-                    elif dr == 1 and dc == 1:
-                        pass
-                    elif dr == 1 and dc == -1:
-                        pass
-                    else:
-                        continue
-                    
-                    threat = self._analyze_line_threat(row, col, dr, dc, player)
-                    if threat:
-                        threats.append(threat)
-        
-        return threats
-
-    def _analyze_line_threat(self, row: int, col: int, dr: int, dc: int, 
-                            player: Player) -> Optional[Dict]:
-        """Analyze a single line for threats"""
-        # Get extended line (looking for patterns)
-        line = []
-        positions = []
-        
-        for i in range(-4, 5):
-            r, c = row + i * dr, col + i * dc
-            if 0 <= r < self.size and 0 <= c < self.size:
-                if self.board[r][c] == player:
-                    line.append('X')
-                elif self.board[r][c] == Player.EMPTY:
-                    line.append('_')
-                else:
-                    line.append('O')
-                positions.append((r, c))
-            else:
-                line.append('#')
-        
-        # Find pattern
-        threat_moves = []
-        
-        # Check for "4 in a row" - can win immediately
-        for i in range(len(line) - 4):
-            segment = line[i:i+5]
-            if segment.count('X') == 4 and segment.count('_') == 1:
-                empty_idx = segment.index('_')
-                threat_moves.append({
-                    'type': 'WIN',
-                    'pos': positions[i + empty_idx],
-                    'priority': 1000000
-                })
-        
-        # Check for "3 in a row with 2 opens" - can create 4
-        for i in range(len(line) - 4):
-            segment = line[i:i+5]
-            if segment == ['_', 'X', 'X', 'X', '_']:
-                threat_moves.append({
-                    'type': 'LIVE_FOUR',
-                    'pos': (positions[i][0], positions[i][1]),
-                    'priority': 100000
-                })
-                threat_moves.append({
-                    'type': 'LIVE_FOUR',
-                    'pos': (positions[i+4][0], positions[i+4][1]),
-                    'priority': 100000
-                })
-        
-        # Check for "3 in a row" 
-        for i in range(len(line) - 3):
-            segment = line[i:i+4]
-            if segment.count('X') == 3 and segment.count('_') == 1:
-                empty_idx = segment.index('_')
-                threat_moves.append({
-                    'type': 'LIVE_THREE',
-                    'pos': positions[i + empty_idx],
-                    'priority': 5000
-                })
-        
-        return threat_moves if threat_moves else None
+        return positions
 
     def evaluate_board(self) -> int:
-        """Evaluate board state - AI wants to maximize, HUMAN wants to minimize"""
+        """Comprehensive board evaluation"""
         if self.zobrist_hash in self.transposition_table:
             return self.transposition_table[self.zobrist_hash]
         
-        ai_score = self._calculate_player_score(Player.AI)
-        human_score = self._calculate_player_score(Player.HUMAN)
+        ai_score = self._score_player(Player.AI)
+        human_score = self._score_player(Player.HUMAN)
         
         score = ai_score - human_score
         self.transposition_table[self.zobrist_hash] = score
         return score
 
-    def _calculate_player_score(self, player: Player) -> int:
-        """Calculate score for a player based on piece patterns"""
+    def _score_player(self, player: Player) -> int:
+        """Score all patterns for a player"""
         score = 0
         directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-        
-        evaluated = set()
         
         for row in range(self.size):
             for col in range(self.size):
                 if self.board[row][col] == player:
                     for dr, dc in directions:
                         line = self._get_line(row, col, dr, dc)
-                        line_key = (row, col, dr, dc)
-                        
-                        if line_key not in evaluated:
-                            evaluated.add(line_key)
-                            score += self._evaluate_pattern_line(line, player)
+                        score += self._score_line(line, player)
         
         return score
 
-    def _get_line(self, row: int, col: int, dr: int, dc: int) -> Tuple:
-        """Get 5-element line centered around (row, col)"""
-        line = ['_'] * 5
-        
-        for i in range(-2, 3):
-            r = row + i * dr
-            c = col + i * dc
+    def _get_line(self, row: int, col: int, dr: int, dc: int) -> str:
+        """Get 9-char line centered at (row, col)"""
+        line = []
+        for i in range(-4, 5):
+            r, c = row + i * dr, col + i * dc
             if 0 <= r < self.size and 0 <= c < self.size:
-                cell = self.board[r][c]
-                if cell == Player.EMPTY:
-                    line[i + 2] = '_'
-                elif cell == Player.AI:
-                    line[i + 2] = 'X'
+                if self.board[r][c] == Player.EMPTY:
+                    line.append('_')
+                elif self.board[r][c] == Player.AI:
+                    line.append('X')
                 else:
-                    line[i + 2] = 'O'
+                    line.append('O')
             else:
-                line[i + 2] = '#'
-        
-        return tuple(line)
+                line.append('#')
+        return ''.join(line)
 
-    def _evaluate_pattern_line(self, line: Tuple, player: Player) -> int:
-        """Evaluate pattern value"""
-        player_char = 'X' if player == Player.AI else 'O'
-        opponent_char = 'O' if player == Player.AI else 'X'
+    def _score_line(self, line: str, player: Player) -> int:
+        """Score a line for a player"""
+        is_ai = (player == Player.AI)
+        my_char = 'X' if is_ai else 'O'
+        opp_char = 'O' if is_ai else 'X'
         
-        # Convert line to string for pattern matching
-        line_str = ''.join(line)
         score = 0
         
-        # Five in a row
-        if player_char * 5 in line_str:
+        # ===== 我方得分 =====
+        
+        # 5 in a row
+        if my_char * 5 in line:
             score += 1000000
         
-        # Four in a row (with opening)
-        if f'_{player_char*4}' in line_str or f'{player_char*4}_' in line_str:
-            score += 50000
+        # 活四 (两边空)
+        if f'_{my_char*4}_' in line:
+            score += 100000
         
-        # Four in a row (blocked on one side)
-        if f'{opponent_char}{player_char*4}' in line_str or f'{player_char*4}{opponent_char}' in line_str:
+        # 冲四 (一边堵，一边空)
+        if f'_{my_char*4}{opp_char}' in line or f'{opp_char}{my_char*4}_' in line:
+            score += 10000
+        if f'_{my_char}_{my_char*3}' in line or f'{my_char*3}_{my_char}_' in line:
             score += 5000
         
-        # Three in a row (with both sides open)
-        if f'_{player_char*3}_' in line_str:
-            score += 8000
+        # 活三 (两边空)
+        if f'_{my_char*3}_' in line:
+            score += 5000
         
-        # Three in a row (with one side open)
-        patterns_3 = [
-            f'_{player_char*3}',
-            f'{player_char*3}_',
-            f'{opponent_char}{player_char*3}_',
-            f'_{player_char*3}{opponent_char}'
-        ]
-        for pattern in patterns_3:
-            if pattern in line_str:
-                score += 800
-                break
+        # 冲三 (一边空一边堵)
+        if f'_{my_char*3}{opp_char}' in line or f'{opp_char}{my_char*3}_' in line:
+            score += 500
+        if f'_{my_char}_{my_char}_{my_char}_' in line:
+            score += 500
+        if f'_{my_char}{my_char}_{my_char*2}' in line or f'{my_char*2}_{my_char}{my_char}_' in line:
+            score += 500
         
-        # Two in a row (with opening)
-        if f'_{player_char*2}_' in line_str:
+        # 活二 (两边空，能形成三)
+        if f'_{my_char*2}_' in line:
+            score += 200
+        if f'_{my_char}__{my_char}_' in line:
             score += 100
         
-        # Two in a row
-        patterns_2 = [f'_{player_char*2}', f'{player_char*2}_']
-        for pattern in patterns_2:
-            if pattern in line_str:
-                score += 20
-                break
+        # 单子和孤立子
+        for i in range(len(line) - 4):
+            segment = line[i:i+5]
+            if my_char in segment:
+                count = segment.count(my_char)
+                if count == 1 and segment.count('_') >= 3:
+                    score += 5
         
-        # Single piece
-        if player_char in line_str:
-            score += 1
+        # ===== 对方威胁惩罚 =====
+        
+        # 对方5连 (紧急！)
+        if opp_char * 5 in line:
+            score -= 1000000
+        
+        # 对方活四 (必须堵)
+        if f'_{opp_char*4}_' in line:
+            score -= 100000
+        
+        # 对方冲四
+        if f'_{opp_char*4}{my_char}' in line or f'{my_char}{opp_char*4}_' in line:
+            score -= 10000
+        
+        # 对方活三
+        if f'_{opp_char*3}_' in line:
+            score -= 5000
         
         return score
 
 
 class AdvancedGomokuAI:
-    """Advanced AI with strategic planning"""
+    """Human-level AI with 8-ply deep search"""
 
-    def __init__(self, depth: int = 6, time_limit: float = 5.0):
+    def __init__(self, depth: int = 8):
         self.depth = depth
-        self.time_limit = time_limit
         self.nodes_evaluated = 0
         self.start_time = 0
+        self.time_limit = 10.0
 
     def get_best_move(self, board: GomokuBoardAdvanced) -> Optional[Tuple[int, int]]:
-        """Find best move with strategy"""
+        """Get best move with deep analysis"""
         self.start_time = time.time()
         self.nodes_evaluated = 0
         
@@ -355,57 +254,63 @@ class AdvancedGomokuAI:
             return (board.size // 2, board.size // 2)
         
         if len(board.move_history) == 1:
-            # Opening: place near center
-            row, col = board.move_history[0][:2]
-            return (row + 1, col) if board.is_valid_move(row + 1, col) else (row, col + 1)
+            return self._opening_move(board)
         
-        # 1. Check immediate winning moves
-        move = self._find_immediate_win(board, Player.AI)
+        # Phase 1: Quick win check
+        move = self._find_instant_win(board, Player.AI)
         if move:
             return move
         
-        # 2. Check immediate defensive blocks
-        move = self._find_immediate_win(board, Player.HUMAN)
+        # Phase 2: Urgent defense
+        move = self._find_instant_win(board, Player.HUMAN)
         if move:
             return move
         
-        # 3. Look for double-threat opportunities
+        # Phase 3: Look for double threats
         move = self._find_double_threat(board)
         if move:
             return move
         
-        # 4. Deep minimax search for strategic moves
+        # Phase 4: Deep minimax
         valid_moves = board.get_valid_moves()
         if not valid_moves:
             return None
         
-        # Prioritize candidate moves
-        candidate_moves = self._prioritize_moves(board, valid_moves)
+        moves = self._rank_moves(board, valid_moves)
         
-        best_move = candidate_moves[0]
+        best_move = moves[0]
         best_score = float('-inf')
         
-        for move in candidate_moves:
+        for move in moves[:10]:  # Only evaluate top 10
             row, col = move
             board.board[row][col] = Player.AI
             board.last_move = (row, col)
             
             score = self._minimax(board, self.depth - 1, False, float('-inf'), float('inf'))
-            
             board.board[row][col] = Player.EMPTY
             
             if score > best_score:
                 best_score = score
                 best_move = move
             
-            # Time check
-            if time.time() - self.start_time > self.time_limit * 0.9:
+            if time.time() - self.start_time > self.time_limit * 0.8:
                 break
         
         return best_move
 
-    def _find_immediate_win(self, board: GomokuBoardAdvanced, player: Player) -> Optional[Tuple[int, int]]:
-        """Find winning move in 1 ply"""
+    def _opening_move(self, board: GomokuBoardAdvanced) -> Tuple[int, int]:
+        """Smart opening"""
+        row, col = board.move_history[0][:2]
+        center = board.size // 2
+        
+        if abs(row - center) <= 1 and abs(col - center) <= 1:
+            return (center, col + 2)
+        else:
+            return (center, center)
+
+    def _find_instant_win(self, board: GomokuBoardAdvanced, 
+                         player: Player) -> Optional[Tuple[int, int]]:
+        """Check for 1-move win"""
         for row, col in board.get_valid_moves():
             board.board[row][col] = player
             board.last_move = (row, col)
@@ -419,13 +324,12 @@ class AdvancedGomokuAI:
         return None
 
     def _find_double_threat(self, board: GomokuBoardAdvanced) -> Optional[Tuple[int, int]]:
-        """Find move that creates 2 winning threats"""
+        """Find 2-threat position"""
         for row, col in board.get_valid_moves():
             board.board[row][col] = Player.AI
             board.last_move = (row, col)
             
-            # Count how many moves in one place can win
-            winning_threats = 0
+            threats = 0
             for next_row, next_col in board.get_valid_moves():
                 board.board[next_row][next_col] = Player.AI
                 board.last_move = (next_row, next_col)
@@ -434,33 +338,32 @@ class AdvancedGomokuAI:
                 board.board[next_row][next_col] = Player.EMPTY
                 
                 if won:
-                    winning_threats += 1
-                    if winning_threats >= 2:
+                    threats += 1
+                    if threats >= 2:
                         break
             
             board.board[row][col] = Player.EMPTY
             
-            if winning_threats >= 2:
+            if threats >= 2:
                 return (row, col)
         
         return None
 
-    def _prioritize_moves(self, board: GomokuBoardAdvanced, 
-                         moves: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-        """Sort moves by strategic value"""
-        scored_moves = []
+    def _rank_moves(self, board: GomokuBoardAdvanced, 
+                   moves: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        """Rank moves by strategic value"""
+        scored = []
         
-        for move in moves:
-            row, col = move
+        for row, col in moves:
             score = 0
             
-            # Distance to last move
+            # Proximity to last move
             if board.last_move:
                 last_row, last_col = board.last_move
-                dist = max(abs(row - last_row), abs(col - last_col))
-                score += (4 - min(dist, 4)) * 10000
+                dist = abs(row - last_row) + abs(col - last_col)
+                score -= dist * 1000
             
-            # Adjacent pieces
+            # Adjacency
             for dr in [-1, 0, 1]:
                 for dc in [-1, 0, 1]:
                     if dr == 0 and dc == 0:
@@ -468,46 +371,46 @@ class AdvancedGomokuAI:
                     r, c = row + dr, col + dc
                     if 0 <= r < board.size and 0 <= c < board.size:
                         if board.board[r][c] != Player.EMPTY:
-                            score += 5000
+                            score += 10000
             
             # Pattern potential
+            board.board[row][col] = Player.AI
             for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                board.board[row][col] = Player.AI
                 line = board._get_line(row, col, dr, dc)
-                board.board[row][col] = Player.EMPTY
+                ai_count = line.count('X')
                 
-                line_str = ''.join(line)
-                
-                if line_str.count('X') >= 3:
-                    score += 20000
-                elif line_str.count('X') == 2:
-                    score += 5000
+                if ai_count == 4:
+                    score += 50000
+                elif ai_count == 3:
+                    score += 10000
+                elif ai_count == 2:
+                    score += 1000
             
-            scored_moves.append((score, move))
+            board.board[row][col] = Player.EMPTY
+            
+            scored.append((score, (row, col)))
         
-        scored_moves.sort(reverse=True)
-        return [move for _, move in scored_moves[:30]]
+        scored.sort(reverse=True)
+        return [move for _, move in scored]
 
-    def _minimax(self, board: GomokuBoardAdvanced, depth: int, is_maximizing: bool,
+    def _minimax(self, board: GomokuBoardAdvanced, depth: int, is_max: bool,
                  alpha: float, beta: float) -> int:
         """Minimax with alpha-beta pruning"""
-        # Terminal conditions
+        # Terminal states
         won, _ = board.check_winner(Player.AI)
         if won:
-            return 100000 + (self.depth - depth) * 100
+            return 100000 + depth * 1000
         
         won, _ = board.check_winner(Player.HUMAN)
         if won:
-            return -100000 - (self.depth - depth) * 100
+            return -100000 - depth * 1000
         
-        if depth == 0 or time.time() - self.start_time > self.time_limit:
+        if depth == 0:
             return board.evaluate_board()
         
-        self.nodes_evaluated += 1
-        
-        if is_maximizing:
+        if is_max:
             max_eval = float('-inf')
-            for row, col in self._prioritize_moves(board, board.get_valid_moves()):
+            for row, col in self._rank_moves(board, board.get_valid_moves())[:8]:
                 board.board[row][col] = Player.AI
                 board.last_move = (row, col)
                 
@@ -516,14 +419,13 @@ class AdvancedGomokuAI:
                 
                 max_eval = max(max_eval, eval_score)
                 alpha = max(alpha, eval_score)
-                
                 if beta <= alpha:
                     break
             
-            return max_eval if max_eval != float('-inf') else board.evaluate_board()
+            return max_eval
         else:
             min_eval = float('inf')
-            for row, col in self._prioritize_moves(board, board.get_valid_moves()):
+            for row, col in self._rank_moves(board, board.get_valid_moves())[:8]:
                 board.board[row][col] = Player.HUMAN
                 board.last_move = (row, col)
                 
@@ -532,25 +434,26 @@ class AdvancedGomokuAI:
                 
                 min_eval = min(min_eval, eval_score)
                 beta = min(beta, eval_score)
-                
                 if beta <= alpha:
                     break
             
-            return min_eval if min_eval != float('inf') else board.evaluate_board()
+            return min_eval
 
 
 class GomokuGUI:
-    """GUI for Gomoku game"""
+    """GUI Interface"""
 
     def __init__(self, root):
         self.root = root
-        self.root.title("AI 五子棋 - 智能版 (Advanced AI)")
+        self.root.title("AI 五子棋 - 人类级别智能")
         self.root.geometry("900x1000")
         
         self.board_size = 15
         self.cell_size = 50
+        self.board_offset = 25
+        
         self.board = GomokuBoardAdvanced(self.board_size)
-        self.ai = AdvancedGomokuAI(depth=6)
+        self.ai = AdvancedGomokuAI(depth=8)
         
         self.game_over = False
         self.ai_thinking = False
@@ -559,11 +462,11 @@ class GomokuGUI:
         self._create_widgets()
 
     def _create_widgets(self):
-        """Create GUI widgets"""
+        """Create UI"""
         title_frame = tk.Frame(self.root)
         title_frame.pack(pady=10)
         
-        title_label = tk.Label(title_frame, text="AI 五子棋 - 智能版", font=("Arial", 24, "bold"))
+        title_label = tk.Label(title_frame, text="AI 五子棋 - 人类级别", font=("Arial", 24, "bold"))
         title_label.pack()
         
         status_frame = tk.Frame(self.root)
@@ -576,110 +479,115 @@ class GomokuGUI:
         board_frame.pack()
         
         self.canvas = tk.Canvas(board_frame, 
-                                width=self.cell_size * self.board_size + 50,
-                                height=self.cell_size * self.board_size + 50,
+                                width=self.cell_size * self.board_size + 2 * self.board_offset,
+                                height=self.cell_size * self.board_size + 2 * self.board_offset,
                                 bg="wheat")
         self.canvas.pack()
-        self.canvas.bind("<Button-1>", self._on_canvas_click)
+        self.canvas.bind("<Button-1>", self._on_click)
         
         button_frame = tk.Frame(self.root)
         button_frame.pack(pady=10)
         
-        reset_btn = tk.Button(button_frame, text="新游戏", command=self._reset_game, 
-                              font=("Arial", 12), width=10)
-        reset_btn.pack(side=tk.LEFT, padx=5)
-        
-        undo_btn = tk.Button(button_frame, text="撤销", command=self._undo_move,
-                             font=("Arial", 12), width=10)
-        undo_btn.pack(side=tk.LEFT, padx=5)
-        
-        quit_btn = tk.Button(button_frame, text="退出", command=self.root.quit,
-                             font=("Arial", 12), width=10)
-        quit_btn.pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="新游戏", command=self._reset, 
+                  font=("Arial", 12), width=10).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="撤销", command=self._undo,
+                  font=("Arial", 12), width=10).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="退出", command=self.root.quit,
+                  font=("Arial", 12), width=10).pack(side=tk.LEFT, padx=5)
         
         self.info_label = tk.Label(self.root, text="点击棋盘下棋", font=("Arial", 10), fg="gray")
         self.info_label.pack(pady=5)
         
-        self._draw_board()
+        self._draw()
 
-    def _draw_board(self):
-        """Draw the game board"""
+    def _pixel_to_coords(self, px: int, py: int) -> Optional[Tuple[int, int]]:
+        """Convert pixel to board coords"""
+        x = px - self.board_offset
+        y = py - self.board_offset
+        
+        if x < 0 or y < 0 or x > self.cell_size * self.board_size or y > self.cell_size * self.board_size:
+            return None
+        
+        col = round(x / self.cell_size)
+        row = round(y / self.cell_size)
+        
+        if 0 <= row < self.board_size and 0 <= col < self.board_size:
+            return (row, col)
+        
+        return None
+
+    def _draw(self):
+        """Draw board"""
         self.canvas.delete("all")
         
-        # Draw grid
-        for i in range(self.board_size + 1):
-            x = 25 + i * self.cell_size
-            y1 = 25
-            y2 = 25 + self.cell_size * self.board_size
+        # Grid
+        for i in range(self.board_size):
+            x = self.board_offset + i * self.cell_size
+            y1 = self.board_offset
+            y2 = self.board_offset + self.cell_size * (self.board_size - 1)
             self.canvas.create_line(x, y1, x, y2, fill="black", width=1)
             
-            y = 25 + i * self.cell_size
-            x1 = 25
-            x2 = 25 + self.cell_size * self.board_size
+            y = self.board_offset + i * self.cell_size
+            x1 = self.board_offset
+            x2 = self.board_offset + self.cell_size * (self.board_size - 1)
             self.canvas.create_line(x1, y, x2, y, fill="black", width=1)
         
-        # Draw star points
-        star_positions = [(3, 3), (3, 11), (7, 7), (11, 3), (11, 11)]
-        for row, col in star_positions:
-            x = 25 + col * self.cell_size
-            y = 25 + row * self.cell_size
-            self.canvas.create_oval(x - 3, y - 3, x + 3, y + 3, fill="black")
+        # Stars
+        for row, col in [(3, 3), (3, 11), (7, 7), (11, 3), (11, 11)]:
+            x = self.board_offset + col * self.cell_size
+            y = self.board_offset + row * self.cell_size
+            self.canvas.create_oval(x - 4, y - 4, x + 4, y + 4, fill="black")
         
-        # Draw pieces
+        # Pieces
         for row in range(self.board_size):
             for col in range(self.board_size):
                 if self.board.board[row][col] != Player.EMPTY:
                     self._draw_piece(row, col, self.board.board[row][col])
         
-        # Draw winning line
+        # Win line
         if self.winning_positions:
             for i in range(len(self.winning_positions) - 1):
                 r1, c1 = self.winning_positions[i]
                 r2, c2 = self.winning_positions[i + 1]
-                x1 = 25 + c1 * self.cell_size
-                y1 = 25 + r1 * self.cell_size
-                x2 = 25 + c2 * self.cell_size
-                y2 = 25 + r2 * self.cell_size
+                x1 = self.board_offset + c1 * self.cell_size
+                y1 = self.board_offset + r1 * self.cell_size
+                x2 = self.board_offset + c2 * self.cell_size
+                y2 = self.board_offset + r2 * self.cell_size
                 self.canvas.create_line(x1, y1, x2, y2, fill="red", width=3)
 
     def _draw_piece(self, row: int, col: int, player: Player):
-        """Draw a single piece"""
-        x = 25 + col * self.cell_size
-        y = 25 + row * self.cell_size
-        radius = self.cell_size // 2 - 3
+        """Draw piece"""
+        x = self.board_offset + col * self.cell_size
+        y = self.board_offset + row * self.cell_size
+        r = self.cell_size // 2 - 3
         
         color = "black" if player == Player.AI else "white"
-        outline = "gray" if player == Player.HUMAN else "gray"
         
-        self.canvas.create_oval(x - radius, y - radius, x + radius, y + radius,
-                               fill=color, outline=outline, width=2)
+        self.canvas.create_oval(x - r, y - r, x + r, y + r,
+                               fill=color, outline="gray", width=2)
 
-    def _on_canvas_click(self, event):
-        """Handle canvas click"""
+    def _on_click(self, event):
+        """Handle click"""
         if self.game_over or self.ai_thinking:
             return
         
-        col = (event.x - 25) // self.cell_size
-        row = (event.y - 25) // self.cell_size
-        
-        if not (0 <= row < self.board_size and 0 <= col < self.board_size):
-            return
-        
-        self._make_human_move(row, col)
+        coords = self._pixel_to_coords(event.x, event.y)
+        if coords:
+            self._human_move(*coords)
 
-    def _make_human_move(self, row: int, col: int):
-        """Handle human move"""
+    def _human_move(self, row: int, col: int):
+        """Human move"""
         if not self.board.is_valid_move(row, col):
             self.info_label.config(text="无效位置！")
             return
         
         self.board.make_move(row, col, Player.HUMAN)
-        self._draw_board()
+        self._draw()
         
-        won, positions = self.board.check_winner(Player.HUMAN)
+        won, pos = self.board.check_winner(Player.HUMAN)
         if won:
-            self.winning_positions = positions
-            self._draw_board()
+            self.winning_positions = pos
+            self._draw()
             self.game_over = True
             self.status_label.config(text="🎉 你赢了！", fg="green")
             messagebox.showinfo("游戏结束", "恭喜！你赢了！")
@@ -689,52 +597,48 @@ class GomokuGUI:
         self.status_label.config(text="AI 思考中...", fg="orange")
         self.root.update()
         
-        thread = threading.Thread(target=self._ai_move_thread)
-        thread.start()
+        threading.Thread(target=self._ai_move_thread, daemon=True).start()
 
     def _ai_move_thread(self):
-        """AI move in separate thread"""
-        try:
-            move = self.ai.get_best_move(self.board)
-            
-            if move:
-                self.root.after(0, lambda: self._make_ai_move(move))
-            else:
-                self.root.after(0, lambda: self._end_game("棋盘已满，平局！"))
-        except Exception as e:
-            self.root.after(0, lambda: self._end_game(f"错误: {str(e)}"))
+        """AI move"""
+        move = self.ai.get_best_move(self.board)
+        
+        if move:
+            self.root.after(0, lambda m=move: self._ai_move(m))
+        else:
+            self.root.after(0, lambda: self._end("棋盘已满，平局！"))
 
-    def _make_ai_move(self, move: Tuple[int, int]):
-        """Make AI move"""
+    def _ai_move(self, move: Tuple[int, int]):
+        """Execute AI move"""
         row, col = move
         self.board.make_move(row, col, Player.AI)
-        self._draw_board()
+        self._draw()
         
-        won, positions = self.board.check_winner(Player.AI)
+        won, pos = self.board.check_winner(Player.AI)
         if won:
-            self.winning_positions = positions
-            self._draw_board()
+            self.winning_positions = pos
+            self._draw()
             self.game_over = True
             self.status_label.config(text="😢 AI 赢了", fg="red")
             self.ai_thinking = False
-            messagebox.showinfo("游戏结束", f"AI 在位置 ({row}, {col}) 赢了！")
+            messagebox.showinfo("游戏结束", f"AI 在 ({row}, {col}) 赢了！")
             return
         
         self.status_label.config(text="你的回合 (白子)", fg="blue")
         self.info_label.config(text=f"AI 下在: ({row}, {col})")
         self.ai_thinking = False
 
-    def _end_game(self, message: str):
+    def _end(self, msg: str):
         """End game"""
         self.game_over = True
         self.ai_thinking = False
         self.status_label.config(text="游戏结束", fg="red")
-        messagebox.showinfo("游戏结束", message)
+        messagebox.showinfo("游戏结束", msg)
 
-    def _undo_move(self):
-        """Undo moves"""
+    def _undo(self):
+        """Undo"""
         if self.game_over:
-            messagebox.showinfo("提示", "游戏已结束，请开始新游戏")
+            messagebox.showinfo("提示", "游戏已结束")
             return
         
         if len(self.board.move_history) >= 2:
@@ -743,24 +647,22 @@ class GomokuGUI:
             self.winning_positions = []
             self.game_over = False
             self.status_label.config(text="你的回合 (白子)", fg="blue")
-            self.info_label.config(text="已撤销上一步")
-            self._draw_board()
-        else:
-            messagebox.showinfo("提示", "无法撤销")
+            self.info_label.config(text="已撤销")
+            self._draw()
 
-    def _reset_game(self):
-        """Reset game"""
+    def _reset(self):
+        """Reset"""
         self.board = GomokuBoardAdvanced(self.board_size)
         self.game_over = False
         self.ai_thinking = False
         self.winning_positions = []
         self.status_label.config(text="你的回合 (白子)", fg="blue")
         self.info_label.config(text="游戏已重置")
-        self._draw_board()
+        self._draw()
 
 
 def main():
-    """Entry point"""
+    """Main"""
     root = tk.Tk()
     gui = GomokuGUI(root)
     root.mainloop()
