@@ -229,9 +229,15 @@ class GomokuBoardAdvanced:
         if f'_{opp_char*4}{my_char}' in line or f'{my_char}{opp_char*4}_' in line:
             score -= 10000
         
-        # 对方活三
+        # 对方活三 (必须立即堵！优先级最高)
         if f'_{opp_char*3}_' in line:
-            score -= 5000
+            score -= 50000
+        
+        # 对方带间隔活三的检测
+        if f'_{opp_char}__{opp_char*2}_' in line or f'_{opp_char*2}__{opp_char}_' in line:
+            score -= 20000
+        if f'_{opp_char}_{opp_char}_{opp_char}_' in line:
+            score -= 15000
         
         return score
 
@@ -261,8 +267,13 @@ class AdvancedGomokuAI:
         if move:
             return move
         
-        # Phase 2: Urgent defense
+        # Phase 2: Urgent defense - block opponent's instant win
         move = self._find_instant_win(board, Player.HUMAN)
+        if move:
+            return move
+        
+        # Phase 2.5: CRITICAL - Block opponent's active three
+        move = self._block_active_three(board)
         if move:
             return move
         
@@ -320,6 +331,75 @@ class AdvancedGomokuAI:
             
             if won:
                 return (row, col)
+        
+        return None
+
+    def _block_active_three(self, board: GomokuBoardAdvanced) -> Optional[Tuple[int, int]]:
+        """Block opponent's active three pattern - CRITICAL DEFENSE"""
+        threat_positions = set()
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+        
+        # 收集所有对手活三的开口位置
+        for row in range(board.size):
+            for col in range(board.size):
+                if board.board[row][col] == Player.HUMAN:
+                    for dr, dc in directions:
+                        line = board._get_line(row, col, dr, dc)
+                        
+                        # 标准活三：_OOO_
+                        if '_OOO_' in line:
+                            idx = line.index('_OOO_')
+                            center_pos = 4
+                            
+                            # 左边的开口
+                            left_pos = idx - 1 - center_pos
+                            r1, c1 = row + left_pos * dr, col + left_pos * dc
+                            if 0 <= r1 < board.size and 0 <= c1 < board.size:
+                                threat_positions.add((r1, c1))
+                            
+                            # 右边的开口
+                            right_pos = idx + 4 - center_pos
+                            r2, c2 = row + right_pos * dr, col + right_pos * dc
+                            if 0 <= r2 < board.size and 0 <= c2 < board.size:
+                                threat_positions.add((r2, c2))
+                        
+                        # 其他活三变体
+                        patterns = ['_O_OO_', '_OO_O_']
+                        for pattern in patterns:
+                            if pattern in line:
+                                idx = line.index(pattern)
+                                for i, char in enumerate(pattern):
+                                    if char == '_':
+                                        pos = idx + i - center_pos
+                                        r, c = row + pos * dr, col + pos * dc
+                                        if 0 <= r < board.size and 0 <= c < board.size and board.board[r][c] == Player.EMPTY:
+                                            threat_positions.add((r, c))
+        
+        # 选择最佳阻挡位置
+        if threat_positions:
+            best_block = None
+            max_blocked = 0
+            
+            for block_row, block_col in threat_positions:
+                board.board[block_row][block_col] = Player.AI
+                
+                # 计算有多少个威胁被阻挡
+                blocked_count = 0
+                for row in range(board.size):
+                    for col in range(board.size):
+                        if board.board[row][col] == Player.HUMAN:
+                            for dr, dc in directions:
+                                line = board._get_line(row, col, dr, dc)
+                                if '_OOO_' in line or '_O_OO_' in line or '_OO_O_' in line:
+                                    blocked_count += 1
+                
+                board.board[block_row][block_col] = Player.EMPTY
+                
+                if blocked_count > max_blocked:
+                    max_blocked = blocked_count
+                    best_block = (block_row, block_col)
+            
+            return best_block
         
         return None
 
